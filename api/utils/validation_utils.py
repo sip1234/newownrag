@@ -470,7 +470,7 @@ class UpdateDocumentReq(Base):
     Request model for updating a document.
 
     This model validates the request parameters for updating a document,
-    including name, chunk method, enabled status, and other metadata.
+    including name, chunk method, enabled/obsolete status, and other metadata.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -478,6 +478,8 @@ class UpdateDocumentReq(Base):
     chunk_method: Annotated[str | None, Field(default=None, max_length=65535)]
     pipeline_id: Annotated[str | None, Field(default=None, max_length=65535)]
     enabled: Annotated[int | None, Field(default=None, ge=0, le=1)]
+    obsolete: bool | None = None
+    parent_id: Annotated[str | None, Field(default=None, max_length=32)]
     chunk_count: Annotated[int | None, Field(default=None, ge=0)]
     token_count: Annotated[int | None, Field(default=None, ge=0)]
     progress: Annotated[float | None, Field(default=None, ge=0.0, le=1.0)]

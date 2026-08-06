@@ -8,16 +8,18 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useSetDocumentStatus } from '@/hooks/use-document-request';
+import { useSetDocumentObsolete, useSetDocumentStatus } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/utils/date';
 import { ColumnDef } from '@tanstack/table-core';
-import { ArrowUpDown } from 'lucide-react';
+import { ArrowUpDown, FilePlus2, FolderClosed } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { MetadataType } from '../components/metedata/constant';
 import { ShowManageMetadataModalProps } from '../components/metedata/interface';
+import { RunningStatus } from './constant';
 import { DatasetActionCell } from './dataset-action-cell';
 import { ParseDropdownButton, ParsingStatusCell } from './parsing-status-cell';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
@@ -27,13 +29,38 @@ type UseDatasetTableColumnsType = UseChangeDocumentParserShowType &
   UseRenameDocumentShowType & {
     showLog: (record: IDocumentInfo) => void;
     showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
+    onOpenCategory: (record: IDocumentInfo) => void;
+    categories: IDocumentInfo[];
   };
+
+const isObsolete = (value: unknown) => value === true || value === 1 || value === '1' || value === 'true';
+const isCategory = (record: IDocumentInfo) => record.type === 'folder' || record.type === 'virtual';
+const isEmptyCategory = (record: IDocumentInfo) => record.type === 'virtual';
+
+function ObsoleteSwitch({ datasetId, documentId, value }: { datasetId?: string; documentId: string; value: unknown }) {
+  const [checked, setChecked] = useState(() => isObsolete(value));
+  const { loading, setDocumentObsolete } = useSetDocumentObsolete();
+  useEffect(() => setChecked(isObsolete(value)), [value]);
+  const onCheckedChange = async (obsolete: boolean) => {
+    if (!datasetId) return;
+    setChecked(obsolete);
+    try {
+      const result = await setDocumentObsolete({ obsolete, documentId, datasetId });
+      if (result?.code !== 0) setChecked(!obsolete);
+    } catch {
+      setChecked(!obsolete);
+    }
+  };
+  return <Switch checked={checked} disabled={loading || !datasetId} onCheckedChange={onCheckedChange} />;
+}
 
 export function useDatasetTableColumns({
   showChangeParserModal,
   showRenameModal,
   showManageMetadataModal,
   showLog,
+  onOpenCategory,
+  categories,
 }: UseDatasetTableColumnsType) {
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
@@ -88,18 +115,16 @@ export function useDatasetTableColumns({
       meta: { cellClassName: 'max-w-[20vw]' },
       cell: ({ row }) => {
         const name: string = row.getValue('name');
+        const category = isCategory(row.original);
 
         return (
           <Tooltip>
             <TooltipTrigger asChild>
               <div
                 className="flex items-center gap-2 cursor-pointer"
-                onClick={navigateToChunkParsedResult(
-                  row.original.id,
-                  row.original.dataset_id,
-                )}
+                onClick={category ? () => onOpenCategory(row.original) : navigateToChunkParsedResult(row.original.id, row.original.dataset_id)}
               >
-                <FileIcon name={name}></FileIcon>
+                {row.original.type === 'folder' ? <FolderClosed className="size-4 shrink-0 text-accent-primary" /> : row.original.type === 'virtual' ? <FilePlus2 className="size-4 shrink-0 text-accent-primary" /> : <FileIcon name={name} />}
                 <span className={cn('truncate')}>{name}</span>
               </div>
             </TooltipTrigger>
@@ -166,10 +191,17 @@ export function useDatasetTableColumns({
       accessorKey: 'status',
       header: t('enabled'),
       cell: ({ row }) => {
+        if (isEmptyCategory(row.original)) return <span>—</span>;
         const id = row.original.id;
-        return (
+        const obsolete = isObsolete(row.getValue('is_obsolete'));
+        const enabled = row.getValue('status') === '1';
+        const parsingIncomplete =
+          !isCategory(row.original) && row.original.run !== RunningStatus.DONE;
+        const disabled = obsolete || (parsingIncomplete && !enabled);
+        const statusSwitch = (
           <Switch
-            checked={row.getValue('status') === '1'}
+            checked={!obsolete && enabled}
+            disabled={disabled}
             onCheckedChange={(e) => {
               setDocumentStatus({
                 status: e,
@@ -179,19 +211,38 @@ export function useDatasetTableColumns({
             }}
           />
         );
+        if (parsingIncomplete && !enabled) {
+          return (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>{statusSwitch}</span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('enableAfterParsing')}
+              </TooltipContent>
+            </Tooltip>
+          );
+        }
+        return (
+          statusSwitch
+        );
       },
+    },
+    {
+      accessorKey: 'is_obsolete',
+      header: t('obsolete'),
+      cell: ({ row }) => isEmptyCategory(row.original) ? <span>—</span> : <ObsoleteSwitch datasetId={datasetId} documentId={row.original.id} value={row.getValue('is_obsolete')} />,
     },
     {
       accessorKey: 'chunk_count',
       header: t('chunkNumber'),
-      cell: ({ row }) => (
-        <div className="capitalize">{row.getValue('chunk_count')}</div>
-      ),
+      cell: ({ row }) => isCategory(row.original) ? <span>—</span> : <div className="capitalize">{row.getValue('chunk_count')}</div>,
     },
     {
       accessorKey: 'meta_fields',
       header: t('metadata.metadata'),
       cell: ({ row }) => {
+        if (isCategory(row.original)) return <span>—</span>;
         const length = Object.keys(row.getValue('meta_fields') || {}).length;
         return (
           <Button
@@ -239,6 +290,7 @@ export function useDatasetTableColumns({
       header: t('Parse'),
       // meta: { cellClassName: 'min-w-[20vw]' },
       cell: ({ row }) => {
+        if (isCategory(row.original)) return <span>—</span>;
         return (
           <ParseDropdownButton
             record={row.original}
@@ -251,6 +303,7 @@ export function useDatasetTableColumns({
       id: 'run-status',
       header: '',
       cell: ({ row }) => {
+        if (isCategory(row.original)) return null;
         return (
           <ParsingStatusCell
             record={row.original}
@@ -271,6 +324,7 @@ export function useDatasetTableColumns({
           <DatasetActionCell
             record={record}
             showRenameModal={showRenameModal}
+            categories={categories}
           />
         );
       },

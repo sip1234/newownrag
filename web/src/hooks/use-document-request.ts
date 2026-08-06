@@ -48,6 +48,7 @@ export const enum DocumentApiAction {
   UploadDocument = 'uploadDocument',
   FetchDocumentList = 'fetchDocumentList',
   UpdateDocumentStatus = 'updateDocumentStatus',
+  UpdateDocumentObsolete = 'updateDocumentObsolete',
   RunDocumentByIds = 'runDocumentByIds',
   RemoveDocument = 'removeDocument',
   SaveDocumentName = 'saveDocumentName',
@@ -59,7 +60,7 @@ export const enum DocumentApiAction {
   ParseDocument = 'parseDocument',
 }
 
-export const useUploadDocument = () => {
+export const useUploadDocument = (parentId?: string) => {
   const queryClient = useQueryClient();
   const { id } = useParams();
 
@@ -83,6 +84,9 @@ export const useUploadDocument = () => {
       });
       if (parserConfig) {
         formData.append('parser_config', JSON.stringify(parserConfig));
+      }
+      if (parentId) {
+        formData.append('parent_id', parentId);
       }
 
       try {
@@ -114,7 +118,7 @@ export const useUploadDocument = () => {
   return { uploadDocument: upload, loading, data };
 };
 
-export const useFetchDocumentList = (loop = true) => {
+export const useFetchDocumentList = (loop = true, parentId = 'root') => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
@@ -138,6 +142,7 @@ export const useFetchDocumentList = (loop = true) => {
       debouncedSearchString,
       pagination,
       filterValue,
+      parentId,
     ],
     initialData: { docs: [], total: 0 },
     refetchInterval: isLoop ? 5000 : false,
@@ -169,6 +174,7 @@ export const useFetchDocumentList = (loop = true) => {
           run_status: run as string[],
           return_empty_metadata: returnEmptyMetadata,
           metadata: filterValue.metadata as Record<string, string[]>,
+          parent_id: parentId,
         },
       );
       if (ret.data.code === 0) {
@@ -293,6 +299,22 @@ export const useSetDocumentStatus = () => {
   });
 
   return { setDocumentStatus: mutateAsync, data, loading };
+};
+
+export const useSetDocumentObsolete = () => {
+  const queryClient = useQueryClient();
+  const { data, isPending: loading, mutateAsync } = useMutation({
+    mutationKey: [DocumentApiAction.UpdateDocumentObsolete],
+    mutationFn: async ({ obsolete, documentId, datasetId }: { obsolete: boolean; documentId: string; datasetId: string }) => {
+      const { data } = await changeDocumentParser(datasetId, documentId, { obsolete });
+      if (data.code === 0) {
+        queryClient.invalidateQueries({ queryKey: [DocumentApiAction.FetchDocumentList] });
+        message.success(i18n.t('message.modified'));
+      }
+      return data;
+    },
+  });
+  return { setDocumentObsolete: mutateAsync, data, loading };
 };
 
 // This hook is used to run a document by its IDs
@@ -483,7 +505,7 @@ export const useSetDocumentMeta = () => {
   return { setDocumentMeta: mutateAsync, data, loading };
 };
 
-export const useCreateDocument = () => {
+export const useCreateDocument = (parentId?: string) => {
   const { id } = useParams();
   const { setPaginationParams, page } = useSetPaginationParams();
   const queryClient = useQueryClient();
@@ -494,11 +516,11 @@ export const useCreateDocument = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: [DocumentApiAction.CreateDocument],
-    mutationFn: async (name: string) => {
+    mutationFn: async ({ name, type }: { name: string; type: 'empty' | 'folder' }) => {
       if (!id) {
         return 500;
       }
-      const data = await createDocument(id, name);
+      const data = await createDocument(id, name, type, parentId);
       if (data.code === 0) {
         if (page === 1) {
           queryClient.invalidateQueries({
@@ -515,6 +537,42 @@ export const useCreateDocument = () => {
   });
 
   return { createDocument: mutateAsync, loading, data };
+};
+
+export const useFetchDocumentCategories = () => {
+  const { id } = useParams();
+  const { data = [], isFetching: loading } = useQuery<IDocumentInfo[]>({
+    queryKey: [DocumentApiAction.FetchDocumentList, 'categories', id],
+    enabled: !!id,
+    queryFn: async () => {
+      const categories: IDocumentInfo[] = [];
+      let page = 1;
+      while (true) {
+        const ret = await listDocument(
+          { id: id!, page, page_size: 100 },
+          { types: ['folder', 'virtual'] },
+        );
+        if (ret.data.code !== 0) return [];
+        const { docs, total } = ret.data.data;
+        categories.push(...docs);
+        if (categories.length >= total || docs.length === 0) return categories;
+        page += 1;
+      }
+    },
+  });
+  return { categories: data, loading };
+};
+
+export const useMoveDocument = () => {
+  const queryClient = useQueryClient();
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationFn: async ({ datasetId, documentId, parentId }: { datasetId: string; documentId: string; parentId?: string }) => {
+      const { data } = await changeDocumentParser(datasetId, documentId, { parent_id: parentId || null });
+      if (data.code === 0) queryClient.invalidateQueries({ queryKey: [DocumentApiAction.FetchDocumentList] });
+      return data;
+    },
+  });
+  return { moveDocument: mutateAsync, loading };
 };
 
 export const useGetDocumentUrl = (documentId?: string) => {

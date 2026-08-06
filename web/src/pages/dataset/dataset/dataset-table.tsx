@@ -27,7 +27,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
-import { useFetchDocumentList } from '@/hooks/use-document-request';
+import { useFetchDocumentCategories, useFetchDocumentList } from '@/hooks/use-document-request';
+import { IDocumentInfo } from '@/interfaces/database/document';
 import { getExtension } from '@/utils/document-util';
 import { t } from 'i18next';
 import { pick } from 'lodash';
@@ -45,6 +46,7 @@ export type DatasetTableProps = Pick<
 > &
   Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> & {
     showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
+    onOpenCategory: (record: IDocumentInfo) => void;
   };
 
 export function DatasetTable({
@@ -54,6 +56,7 @@ export function DatasetTable({
   rowSelection,
   setRowSelection,
   showManageMetadataModal,
+  onOpenCategory,
 }: DatasetTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -88,12 +91,15 @@ export function DatasetTable({
   //   metaRecord,
   // } = useSaveMeta();
   const { showLog, logInfo, logVisible, hideLog } = useShowLog(documents);
+  const { categories } = useFetchDocumentCategories();
 
   const columns = useDatasetTableColumns({
     showChangeParserModal,
     showRenameModal,
     showManageMetadataModal,
     showLog,
+    onOpenCategory,
+    categories,
   });
 
   const currentPagination = useMemo(() => {

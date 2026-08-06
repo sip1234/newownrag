@@ -15,6 +15,9 @@ __pycache__/
 # ── Frontend dependencies and build outputs ─────────────────────────────────
 web/node_modules/
 web/dist/
+# Allow a locally verified production bundle to be copied by Dockerfile.local.
+!web/dist/
+!web/dist/**
 
 # ── Runtime logs ────────────────────────────────────────────────────────────
 logs/

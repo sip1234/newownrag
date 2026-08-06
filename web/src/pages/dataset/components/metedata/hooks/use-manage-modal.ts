@@ -4,6 +4,7 @@ import { useSelectedIds } from '@/hooks/logic-hooks/use-row-selection';
 import { DocumentApiAction } from '@/hooks/use-document-request';
 import {
   getMetaDataService,
+  getKbMetaDataConfig,
   kbUpdateMetaData,
   updateDocumentMetaDataConfig,
   updateDocumentsMetadata,
@@ -257,27 +258,36 @@ export const useFetchMetaDataManageData = (
     data,
     isFetching: loading,
     refetch,
-  } = useQuery<IMetaDataTableData[]>({
+  } = useQuery<{
+    metadata: IMetaDataTableData[];
+    templates: IMetaDataTableData[];
+  }>({
     queryKey: ['fetchMetaData', id, documentIds],
     enabled:
       !!id &&
       (type === MetadataType.Manage || type === MetadataType.UpdateSingle),
-    initialData: [],
+    initialData: { metadata: [], templates: [] },
     gcTime: 1000,
     queryFn: async () => {
-      const { data } = await getMetaDataService({
-        kb_id: id as string,
-        doc_ids: documentIds,
-      });
-      if (data?.data?.summary) {
-        const res = util.changeToMetaDataTableData(data.data.summary);
-        return res;
-      }
-      return [];
+      const [summaryResponse, configResponse] = await Promise.all([
+        getMetaDataService({
+          kb_id: id as string,
+          doc_ids: documentIds,
+        }),
+        getKbMetaDataConfig(id as string),
+      ]);
+      const documentMetadata = summaryResponse.data?.data?.summary
+        ? util.changeToMetaDataTableData(summaryResponse.data.data.summary)
+        : [];
+      const configuredMetadata = util.metaDataSettingJSONToMetaDataTableData(
+        configResponse.data?.data?.metadata || [],
+      );
+      return { metadata: documentMetadata, templates: configuredMetadata };
     },
   });
   return {
-    data,
+    data: data?.metadata || [],
+    templates: data?.templates || [],
     loading,
     refetch,
   };
@@ -292,7 +302,10 @@ export const useManageMetaDataModal = (
 ) => {
   const { id } = useParams();
   const { t } = useTranslation();
-  const { data, loading } = useFetchMetaDataManageData(type, documentIds);
+  const { data, templates, loading } = useFetchMetaDataManageData(
+    type,
+    documentIds,
+  );
 
   const [tableData, setTableData] = useState<IMetaDataTableData[]>(metaData);
   const queryClient = useQueryClient();
@@ -500,6 +513,7 @@ export const useManageMetaDataModal = (
     handleSave,
     addUpdateValue,
     addDeleteValue,
+    metadataTemplates: templates,
   };
 };
 

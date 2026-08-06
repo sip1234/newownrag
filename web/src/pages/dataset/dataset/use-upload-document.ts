@@ -7,13 +7,13 @@ import {
 import { getUnSupportedFilesCount } from '@/utils/document-util';
 import { useCallback } from 'react';
 
-export const useHandleUploadDocument = () => {
+export const useHandleUploadDocument = (parentId?: string) => {
   const {
     visible: documentUploadVisible,
     hideModal: hideDocumentUploadModal,
     showModal: showDocumentUploadModal,
   } = useSetModalState();
-  const { uploadDocument, loading } = useUploadDocument();
+  const { uploadDocument, loading } = useUploadDocument(parentId);
   const { runDocumentByIds } = useRunDocument();
 
   const onDocumentUploadOk = useCallback(

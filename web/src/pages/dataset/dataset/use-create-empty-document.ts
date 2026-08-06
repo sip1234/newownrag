@@ -2,8 +2,8 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { useCreateDocument } from '@/hooks/use-document-request';
 import { useCallback } from 'react';
 
-export const useCreateEmptyDocument = () => {
-  const { createDocument, loading } = useCreateDocument();
+export const useCreateEmptyDocument = (type: 'empty' | 'folder', parentId?: string) => {
+  const { createDocument, loading } = useCreateDocument(parentId);
 
   const {
     visible: createVisible,
@@ -13,7 +13,7 @@ export const useCreateEmptyDocument = () => {
 
   const onCreateOk = useCallback(
     async (name: string) => {
-      const ret = await createDocument(name);
+      const ret = await createDocument({ name, type });
       if (ret === 0) {
         hideCreateModal();
       }

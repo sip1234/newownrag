@@ -68,9 +68,15 @@ class Dealer:
         unique_doc_ids = list(dict.fromkeys(doc_ids))
 
         def _load():
+            from api.db.db_models import Document
             from api.db.services.document_service import DocumentService
 
-            return {row["id"] for row in DocumentService.get_by_ids(unique_doc_ids).dicts()}
+            return {
+                row["id"]
+                for row in DocumentService.get_by_ids(unique_doc_ids)
+                .where(Document.status == "1", ~Document.is_obsolete)
+                .dicts()
+            }
 
         return await thread_pool_exec(_load)
 

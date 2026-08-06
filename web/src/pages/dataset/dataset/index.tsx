@@ -20,8 +20,8 @@ import {
 } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchDocumentList } from '@/hooks/use-document-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import { LucidePlus } from 'lucide-react';
-import { useEffect } from 'react';
+import { ChevronRight, FolderPlus, LucidePlus } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MetadataType } from '../components/metedata/constant';
 import { useManageMetadata } from '../components/metedata/hooks/use-manage-modal';
@@ -37,13 +37,15 @@ import { useHandleUploadDocument } from './use-upload-document';
 
 export default function Dataset() {
   const { t } = useTranslation();
+  const [categoryPath, setCategoryPath] = useState<Array<{ id: string; name: string }>>([]);
+  const currentParentId = categoryPath.at(-1)?.id;
   const {
     documentUploadVisible,
     hideDocumentUploadModal,
     showDocumentUploadModal,
     onDocumentUploadOk,
     documentUploadLoading,
-  } = useHandleUploadDocument();
+  } = useHandleUploadDocument(currentParentId);
   const { knowledgeBase } = useKnowledgeBaseContext();
   const {
     searchString,
@@ -55,7 +57,7 @@ export default function Dataset() {
     handleFilterSubmit,
     loading,
     checkValue,
-  } = useFetchDocumentList();
+  } = useFetchDocumentList(true, currentParentId || 'root');
 
   const { data: dataSetData } = useFetchKnowledgeBaseConfiguration();
 
@@ -67,7 +69,14 @@ export default function Dataset() {
     createVisible,
     hideCreateModal,
     showCreateModal,
-  } = useCreateEmptyDocument();
+  } = useCreateEmptyDocument('empty', currentParentId);
+  const {
+    createLoading: createFolderLoading,
+    onCreateOk: onCreateFolderOk,
+    createVisible: createFolderVisible,
+    hideCreateModal: hideCreateFolderModal,
+    showCreateModal: showCreateFolderModal,
+  } = useCreateEmptyDocument('folder', currentParentId);
 
   const {
     manageMetadataVisible,
@@ -83,6 +92,12 @@ export default function Dataset() {
 
   const { rowSelection, rowSelectionIsEmpty, setRowSelection, selectedCount } =
     useRowSelection();
+
+  const openCategory = (record: { id: string; name: string }) => {
+    setCategoryPath((path) => [...path, record]);
+    setPagination({ page: 1 });
+    setRowSelection({});
+  };
 
   const {
     chunkNum,
@@ -100,6 +115,18 @@ export default function Dataset() {
     rowSelection,
     documents,
   );
+  const metadataDocumentIds = useMemo(
+    () =>
+      selectedRowKeys.filter((id) =>
+        documents.some(
+          (document) =>
+            document.id === id &&
+            document.type !== 'folder' &&
+            document.type !== 'virtual',
+        ),
+      ),
+    [documents, selectedRowKeys],
+  );
 
   const handleAddMetadataWithDocuments = () => {
     showManageMetadataModal({
@@ -111,7 +138,7 @@ export default function Dataset() {
       secondTitle: (
         <>
           {t('knowledgeDetails.metadata.selectFiles', {
-            count: selectedCount,
+            count: metadataDocumentIds.length,
           })}
         </>
       ),
@@ -125,18 +152,17 @@ export default function Dataset() {
           </div> */}
         </div>
       ),
-      documentIds: selectedRowKeys,
+      documentIds: metadataDocumentIds,
     });
   };
 
-  const updatedList = list.map((item) => {
+  const updatedList = list.flatMap((item) => {
     if (item.id === 'batch-metadata') {
-      return {
-        ...item,
-        onClick: handleAddMetadataWithDocuments,
-      };
+      return metadataDocumentIds.length
+        ? [{ ...item, onClick: handleAddMetadataWithDocuments }]
+        : [];
     }
-    return item;
+    return [item];
   });
 
   return (
@@ -212,9 +238,27 @@ export default function Dataset() {
               <DropdownMenuItem onClick={showCreateModal}>
                 {t('knowledgeDetails.emptyFiles')}
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={showCreateFolderModal}>
+                <FolderPlus />
+                {t('knowledgeDetails.newFolder', { defaultValue: 'New folder' })}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </ListFilterBar>
+
+        <div className="flex items-center gap-1 pt-3 text-sm">
+          <button className="hover:underline" onClick={() => { setCategoryPath([]); setPagination({ page: 1 }); setRowSelection({}); }}>
+            {t('knowledgeDetails.rootCategory', { defaultValue: 'Root' })}
+          </button>
+          {categoryPath.map((category, index) => (
+            <span key={category.id} className="flex items-center gap-1">
+              <ChevronRight className="size-4 text-text-secondary" />
+              <button className="hover:underline" onClick={() => { setCategoryPath((path) => path.slice(0, index + 1)); setPagination({ page: 1 }); setRowSelection({}); }}>
+                {category.name}
+              </button>
+            </span>
+          ))}
+        </div>
 
         {rowSelectionIsEmpty || (
           <BulkOperateBar
@@ -233,6 +277,7 @@ export default function Dataset() {
           rowSelection={rowSelection}
           setRowSelection={setRowSelection}
           showManageMetadataModal={showManageMetadataModal}
+          onOpenCategory={openCategory}
           loading={loading}
         />
 
@@ -252,6 +297,14 @@ export default function Dataset() {
             loading={createLoading}
             title={t('knowledgeDetails.fileName')}
           ></RenameDialog>
+        )}
+        {createFolderVisible && (
+          <RenameDialog
+            hideModal={hideCreateFolderModal}
+            onOk={onCreateFolderOk}
+            loading={createFolderLoading}
+            title={t('knowledgeDetails.folderName', { defaultValue: 'Folder name' })}
+          />
         )}
         {manageMetadataVisible && (
           <ManageMetadataModal

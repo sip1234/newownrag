@@ -8,6 +8,7 @@ export interface IDocumentInfo {
   nickname: string;
   id: string;
   dataset_id: string;
+  parent_id?: string | null;
   location: string;
   name: string;
   parser_config: IParserConfig;
@@ -22,6 +23,7 @@ export interface IDocumentInfo {
   size: number;
   source_type: string;
   status: string;
+  is_obsolete: boolean;
   suffix: string;
   thumbnail: string;
   token_num: number;
