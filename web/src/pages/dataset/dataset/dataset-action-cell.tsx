@@ -1,19 +1,26 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
-import { DocumentType } from '@/constants/knowledge';
-import { useRemoveDocument } from '@/hooks/use-document-request';
+import { useMoveDocument, useRemoveDocument } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { downloadDatasetDocument } from '@/services/file-manager-service';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import { downloadFileFromBlob } from '@/utils/file-util';
-import { Download, Eye, PenLine, Trash2 } from 'lucide-react';
-import { useCallback } from 'react';
+import { Download, Eye, FolderInput, PenLine, Trash2 } from 'lucide-react';
+import { useCallback, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { UseRenameDocumentShowType } from './use-rename-document';
 import { isParserRunning } from './utils';
 
@@ -28,12 +35,29 @@ const FunctionMap = {
 export function DatasetActionCell({
   record,
   showRenameModal,
-}: { record: IDocumentInfo } & UseRenameDocumentShowType) {
+  categories,
+}: { record: IDocumentInfo; categories: IDocumentInfo[] } & UseRenameDocumentShowType) {
   const { id, run, type } = record;
+  const { t } = useTranslation();
   const isRunning = isParserRunning(run);
-  const isVirtualDocument = type === DocumentType.Virtual;
+  const isCategory = type === 'virtual' || type === 'folder';
 
   const { removeDocument } = useRemoveDocument();
+  const { moveDocument, loading: moveLoading } = useMoveDocument();
+  const moveTargets = useMemo(() => {
+    const unavailable = new Set([record.id]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      categories.forEach((category) => {
+        if (category.parent_id && unavailable.has(category.parent_id) && !unavailable.has(category.id)) {
+          unavailable.add(category.id);
+          changed = true;
+        }
+      });
+    }
+    return categories.filter((category) => !unavailable.has(category.id) && category.id !== record.parent_id);
+  }, [categories, record.id, record.parent_id]);
 
   const onDownloadDocument = useCallback(async () => {
     try {
@@ -101,7 +125,30 @@ export function DatasetActionCell({
         </HoverCardContent>
       </HoverCard>
 
-      {isVirtualDocument || (
+      {(record.parent_id || moveTargets.length > 0) && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button aria-label={t('knowledgeDetails.moveToCategory', { defaultValue: 'Move' })} size="icon-xs" variant="ghost" disabled={isRunning || moveLoading}>
+              <FolderInput className="size-[1em]" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="max-h-72 overflow-auto">
+            {record.parent_id && <>
+              <DropdownMenuItem onClick={() => moveDocument({ datasetId: record.dataset_id, documentId: id })}>
+                {t('knowledgeDetails.rootCategory', { defaultValue: 'Root' })}
+              </DropdownMenuItem>
+              {moveTargets.length > 0 && <DropdownMenuSeparator />}
+            </>}
+            {moveTargets.map((category) => (
+              <DropdownMenuItem key={category.id} onClick={() => moveDocument({ datasetId: record.dataset_id, documentId: id, parentId: category.id })}>
+                {category.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+
+      {isCategory || (
         <Button
           size="icon-xs"
           variant="ghost"

@@ -881,6 +881,7 @@ class Document(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     thumbnail = TextField(null=True, help_text="thumbnail base64 string")
     kb_id = CharField(max_length=256, null=False, index=True)
+    parent_id = CharField(max_length=32, null=True, help_text="parent folder id", index=True)
     parser_id = CharField(max_length=32, null=False, help_text="default parser ID", index=True)
     pipeline_id = CharField(max_length=32, null=True, help_text="pipeline ID", index=True)
     parser_config = JSONField(null=False, default={"pages": [[1, 1000000]], "table_context_size": 0, "image_context_size": 0})
@@ -902,6 +903,7 @@ class Document(DataBaseModel):
 
     run = CharField(max_length=1, null=True, help_text="start to run processing or cancel.(1: run it; 2: cancel)", default="0", index=True)
     status = CharField(max_length=1, null=True, help_text="is it validate(0: wasted, 1: validate)", default="1", index=True)
+    is_obsolete = BooleanField(null=False, default=False, help_text="exclude this document from retrieval", index=True)
 
     class Meta:
         db_table = "document"
@@ -1734,6 +1736,8 @@ def _update_tenant_llm_to_id_primary_key_postgres():
 def migrate_db():
     logging.disable(logging.ERROR)
     migrator = DatabaseMigrator[settings.DATABASE_TYPE.upper()].value(DB)
+    alter_db_add_column(migrator, "document", "parent_id", CharField(max_length=32, null=True, help_text="parent folder id", index=True))
+    alter_db_add_column(migrator, "document", "is_obsolete", BooleanField(null=False, default=False, help_text="exclude this document from retrieval", index=True))
     alter_db_add_column(migrator, "file", "source_type", CharField(max_length=128, null=False, default="", help_text="where dose this document come from", index=True))
     alter_db_add_column(migrator, "tenant", "rerank_id", CharField(max_length=128, null=False, default="BAAI/bge-reranker-v2-m3", help_text="default rerank model ID"))
     alter_db_add_column(migrator, "dialog", "rerank_id", CharField(max_length=128, null=False, default="", help_text="default rerank model ID"))

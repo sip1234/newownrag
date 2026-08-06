@@ -480,7 +480,6 @@ export function AutoMetadata({
       'parser_config.built_in_metadata',
       data?.builtInMetadata || [],
     );
-    form.setValue('parser_config.enable_metadata', true);
   };
   return (
     <>

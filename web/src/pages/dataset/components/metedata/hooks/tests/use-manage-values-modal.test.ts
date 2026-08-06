@@ -38,6 +38,29 @@ function makeProps(
 }
 
 describe('useManageValues - add new metadata', () => {
+  it('applies a predefined field template before saving', () => {
+    const { result } = renderHook(() => useManageValues(makeProps()));
+
+    act(() => {
+      result.current.handleSelectTemplate({
+        field: 'department',
+        description: 'Document owner',
+        values: ['Finance'],
+        valueType: metadataValueTypeEnum.list,
+        restrictDefinedValues: true,
+      });
+    });
+
+    expect(result.current.metaData).toMatchObject({
+      field: 'department',
+      description: 'Document owner',
+      values: [''],
+      valueType: metadataValueTypeEnum.list,
+      restrictDefinedValues: true,
+    });
+    expect(result.current.tempValues).toEqual(['']);
+  });
+
   it('queues the typed value, not the pre-blur empty string', () => {
     const addUpdateValue = jest.fn();
     const props = makeProps({ addUpdateValue });

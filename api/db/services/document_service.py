@@ -48,6 +48,7 @@ class DocumentService(CommonService):
             cls.model.id,
             cls.model.thumbnail,
             cls.model.kb_id,
+            cls.model.parent_id,
             cls.model.parser_id,
             cls.model.pipeline_id,
             cls.model.parser_config,
@@ -66,6 +67,7 @@ class DocumentService(CommonService):
             cls.model.suffix,
             cls.model.run,
             cls.model.status,
+            cls.model.is_obsolete,
             cls.model.create_time,
             cls.model.create_date,
             cls.model.update_time,
@@ -95,10 +97,11 @@ class DocumentService(CommonService):
             docs = docs.where(cls.model.suffix.in_(suffix))
         if run:
             docs = docs.where(cls.model.run.in_(run))
-        if desc:
-            docs = docs.order_by(cls.model.getter_by(orderby).desc())
-        else:
-            docs = docs.order_by(cls.model.getter_by(orderby).asc())
+        sort_fields = []
+        if orderby == "create_time":
+            sort_fields.extend([cls.model.is_obsolete.asc(), cls.model.status.desc()])
+        sort_fields.append(cls.model.getter_by(orderby).desc() if desc else cls.model.getter_by(orderby).asc())
+        docs = docs.order_by(*sort_fields)
 
         count = docs.count()
         docs = docs.paginate(page_number, items_per_page)
@@ -124,7 +127,7 @@ class DocumentService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types, suffix, name=None, doc_ids=None, return_empty_metadata=False):
+    def get_by_kb_id(cls, kb_id, page_number, items_per_page, orderby, desc, keywords, run_status, types, suffix, name=None, doc_ids=None, return_empty_metadata=False, parent_id=None):
         fields = cls.get_cls_model_fields()
         if keywords:
             docs = (
@@ -154,6 +157,10 @@ class DocumentService(CommonService):
             docs = docs.where(cls.model.suffix.in_(suffix))
         if name:
             docs = docs.where(cls.model.name == name)
+        if parent_id == "root":
+            docs = docs.where(cls.model.parent_id.is_null(True))
+        elif parent_id:
+            docs = docs.where(cls.model.parent_id == parent_id)
 
         if return_empty_metadata:
             metadata_map = DocMetadataService.get_metadata_for_documents(None, kb_id)
@@ -162,10 +169,11 @@ class DocumentService(CommonService):
                 docs = docs.where(cls.model.id.not_in(doc_ids_with_metadata))
 
         count = docs.count()
-        if desc:
-            docs = docs.order_by(cls.model.getter_by(orderby).desc())
-        else:
-            docs = docs.order_by(cls.model.getter_by(orderby).asc())
+        sort_fields = []
+        if orderby == "create_time":
+            sort_fields.extend([cls.model.is_obsolete.asc(), cls.model.status.desc()])
+        sort_fields.append(cls.model.getter_by(orderby).desc() if desc else cls.model.getter_by(orderby).asc())
+        docs = docs.order_by(*sort_fields)
 
         if page_number and items_per_page:
             docs = docs.paginate(page_number, items_per_page)
@@ -180,6 +188,23 @@ class DocumentService(CommonService):
             for doc in docs_list:
                 doc["meta_fields"] = metadata_map.get(doc["id"], {})
         return docs_list, count
+
+    @classmethod
+    @DB.connection_context()
+    def get_descendants(cls, kb_id, parent_id):
+        """Return every nested document below a folder, without trusting a tree is acyclic."""
+        descendants, pending, seen = [], [parent_id], {parent_id}
+        while pending:
+            current_parent_ids, pending = pending, []
+            children = cls.model.select().where((cls.model.kb_id == kb_id) & (cls.model.parent_id.in_(current_parent_ids)))
+            for child in children:
+                if child.id in seen:
+                    continue
+                seen.add(child.id)
+                descendants.append(child)
+                if child.type in {FileType.FOLDER.value, FileType.VIRTUAL.value}:
+                    pending.append(child.id)
+        return descendants
 
     @classmethod
     @DB.connection_context()

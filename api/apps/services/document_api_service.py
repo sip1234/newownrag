@@ -15,6 +15,7 @@
 #
 import logging
 
+from api.db import FileType
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.file_service import FileService
@@ -147,34 +148,60 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
     return None
 
 
-def update_document_status_only(status: int, doc, kb):
+def update_document_retrievability(doc, kb, *, status: int | None = None, obsolete: bool | None = None):
     """
     Update document status only (without validation).
 
-    Updates the enabled/disabled status of a document and updates
-    the corresponding index in the document store.
-
-    Args:
-        status: The new status value (0 for disabled, 1 for enabled).
-        doc: The document model from the database.
-        kb: The knowledge base model.
-
-    Returns:
-        None if successful, or an error result dictionary if failed.
+    Persist retrieval flags and cascade a folder's state to every descendant.
     """
-    if doc.status is None or (int(doc.status) != status):
-        try:
-            if not DocumentService.update_by_id(doc.id, {"status": str(status)}):
-                return get_error_data_result(message="Database error (Document update)!")
-            settings.docStoreConn.update(
-                {"doc_id": doc.id, "must_not": {"exists": "compile_kwd"}},
-                {"available_int": status},
-                search.index_name(kb.tenant_id),
-                doc.kb_id,
+    targets = [doc]
+    if doc.type == FileType.FOLDER.value:
+        targets.extend(DocumentService.get_descendants(doc.kb_id, doc.id))
+
+    # Parsing can create chunks before the document has finished.  Making those
+    # chunks available at that point would expose an incomplete document to
+    # retrieval, so enabling is allowed only after a regular document is done.
+    if status == 1 and not obsolete:
+        incomplete_targets = [
+            target
+            for target in targets
+            if target.type not in {FileType.FOLDER.value, FileType.VIRTUAL.value}
+            and str(target.run) != TaskStatus.DONE.value
+        ]
+        if incomplete_targets:
+            return get_error_data_result(
+                message="Documents must finish parsing before they can be enabled."
             )
-        except Exception as e:
-            return server_error_response(e)
+    try:
+        for target in targets:
+            new_status = int(target.status) if status is None else status
+            current_obsolete = bool(getattr(target, "is_obsolete", False))
+            new_obsolete = current_obsolete if obsolete is None else obsolete
+            if new_obsolete:
+                new_status = 0
+            update_fields = {}
+            if str(target.status) != str(new_status):
+                update_fields["status"] = str(new_status)
+            if current_obsolete != new_obsolete:
+                update_fields["is_obsolete"] = new_obsolete
+            if not update_fields:
+                continue
+            if not DocumentService.update_by_id(target.id, update_fields):
+                return get_error_data_result(message="Database error (Document update)!")
+            if getattr(target, "chunk_num", 0) > 0:
+                settings.docStoreConn.update(
+                    {"doc_id": target.id, "must_not": {"exists": "compile_kwd"}},
+                    {"available_int": int(new_status == 1 and not new_obsolete)},
+                    search.index_name(kb.tenant_id),
+                    target.kb_id,
+                )
+    except Exception as e:
+        return server_error_response(e)
     return None
+
+
+def update_document_status_only(status: int, doc, kb):
+    return update_document_retrievability(doc, kb, status=status)
 
 
 def validate_document_update_fields(update_doc_req: UpdateDocumentReq, doc, req):
@@ -200,7 +227,8 @@ def validate_document_update_fields(update_doc_req: UpdateDocumentReq, doc, req)
 
     # Validate document name if present
     if "name" in req and req["name"] != doc.name:
-        docs_from_name = DocumentService.query(name=req["name"], kb_id=doc.kb_id)
+        target_parent_id = update_doc_req.parent_id if "parent_id" in req else doc.parent_id
+        docs_from_name = DocumentService.query(name=req["name"], kb_id=doc.kb_id, parent_id=target_parent_id)
         error_msg, error_code = validation_utils.validate_document_name(req["name"], doc, docs_from_name)
         if error_msg:
             return error_msg, error_code

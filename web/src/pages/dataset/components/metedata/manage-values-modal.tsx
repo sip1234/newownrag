@@ -8,12 +8,20 @@ import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { formatDate } from '@/utils/date';
 import dayjs from 'dayjs';
 import { Plus, Trash2 } from 'lucide-react';
-import { memo, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  getMetadataValueTypeLabel,
   MetadataType,
   metadataValueTypeEnum,
   metadataValueTypeOptions,
@@ -31,6 +39,8 @@ const ValueInputItem = memo(
     onDelete,
     onBlur,
     isCanDelete = true,
+    options = [],
+    placeholder = 'Select a value',
   }: {
     item: string;
     index: number;
@@ -39,6 +49,8 @@ const ValueInputItem = memo(
     onDelete: (index: number) => void;
     onBlur: (index: number) => void;
     isCanDelete?: boolean;
+    options?: string[];
+    placeholder?: string;
   }) => {
     const value = useMemo(() => {
       if (type === 'time') {
@@ -86,7 +98,26 @@ const ValueInputItem = memo(
               showTimeSelect={true}
             />
           )}
-          {type !== 'time' && (
+          {type !== 'time' && options.length > 0 && (
+            <Select
+              value={(value as string) || undefined}
+              onValueChange={(nextValue) =>
+                onValueChange(index, nextValue, true)
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={placeholder} />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {type !== 'time' && options.length === 0 && (
             <Input
               value={value as string}
               type={type === 'number' ? 'number' : 'text'}
@@ -122,10 +153,12 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
     isShowDescription,
     isVerticalShowValue,
     isShowType,
+    isAddValueMode,
     type: metadataType,
     testId,
     okButtonTestId,
     addValueButtonTestId,
+    metadataTemplates = [],
   } = props;
   const {
     metaData,
@@ -133,6 +166,7 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
     valueError,
     deleteDialogContent,
     handleClearValues,
+    handleSelectTemplate,
     handleChange,
     handleValueChange,
     handleValueBlur,
@@ -149,9 +183,47 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
   const [valueType, setValueType] = useState<MetadataValueType>(
     metaData.valueType || 'string',
   );
+  const [templateValues, setTemplateValues] = useState<string[]>([]);
+  const canSelectTemplate = isAddValueMode && metadataTemplates.length > 0;
+
+  useEffect(() => {
+    if (!visible) setTemplateValues([]);
+  }, [visible]);
 
   // Define form fields based on component properties
   const formFields = [
+    ...(canSelectTemplate
+      ? [
+          {
+            name: 'metadataTemplate',
+            label: t('knowledgeDetails.metadata.predefinedField'),
+            type: FormFieldType.Select,
+            options: metadataTemplates.map((template) => ({
+              label: `${template.field} (${getMetadataValueTypeLabel(template.valueType)})`,
+              value: template.field,
+            })),
+            placeholder: t('knowledgeDetails.metadata.selectPredefinedField'),
+            onChange: (field: string) => {
+              const template = metadataTemplates.find(
+                (item) => item.field === field,
+              );
+              if (!template) return;
+              handleSelectTemplate(template);
+              setTemplateValues(template.values);
+              setValueType(template.valueType || metadataValueTypeEnum.string);
+              formRef.current?.form.setValue('field', template.field);
+              formRef.current?.form.setValue(
+                'valueType',
+                template.valueType || metadataValueTypeEnum.string,
+              );
+              formRef.current?.form.setValue(
+                'description',
+                template.description,
+              );
+            },
+          },
+        ]
+      : []),
     ...(isEditField
       ? [
           {
@@ -310,6 +382,8 @@ export const ManageValuesModal = (props: IManageValuesProps) => {
                       }}
                       isCanDelete={tempValues.length > 1}
                       onBlur={() => handleValueBlur()}
+                      options={templateValues}
+                      placeholder={t('knowledgeDetails.metadata.selectPredefinedValue')}
                     />
                   );
                 })}

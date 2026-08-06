@@ -106,6 +106,7 @@ export interface IManageValuesProps {
   testId?: string;
   okButtonTestId?: string;
   addValueButtonTestId?: string;
+  metadataTemplates?: IMetaDataTableData[];
 }
 
 export interface DeleteOperation {

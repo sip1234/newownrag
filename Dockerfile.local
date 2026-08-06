@@ -1,0 +1,9 @@
+FROM infiniflow/ragflow:v0.26.4
+
+WORKDIR /ragflow
+
+# Overlay the changed server code and the freshly compiled web application on
+# the official runtime image.  Dependencies remain those of the base image.
+COPY api /ragflow/api
+COPY rag /ragflow/rag
+COPY web/dist /ragflow/web/dist

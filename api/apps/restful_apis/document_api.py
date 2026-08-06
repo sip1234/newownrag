@@ -33,11 +33,11 @@ from api.apps.services.document_api_service import (
     map_doc_keys_with_run_status,
     update_document_name_only,
     update_chunk_method,
-    update_document_status_only,
+    update_document_retrievability,
     reset_document_for_reparse,
 )
 from api.db import VALID_FILE_TYPES, FileType
-from api.db.db_models import API4Conversation, DB
+from api.db.db_models import API4Conversation, DB, Document
 from api.db.services import duplicate_name
 from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.db_models import Task
@@ -246,6 +246,18 @@ async def update_document(tenant_id, dataset_id, document_id):
     if error_msg:
         return get_error_data_result(message=error_msg, code=error_code)
 
+    if "parent_id" in req:
+        parent_id = (update_doc_req.parent_id or "").strip() or None
+        _, parent_error = _validate_document_parent(dataset_id, parent_id, doc.id)
+        if parent_error:
+            return parent_error
+        target_name = update_doc_req.name if "name" in req else doc.name
+        siblings = DocumentService.query(name=target_name, kb_id=dataset_id, parent_id=parent_id)
+        if any(sibling.id != doc.id for sibling in siblings):
+            return get_error_data_result(message="Duplicated document name in the same folder.")
+        if not DocumentService.update_by_id(doc.id, {"parent_id": parent_id}):
+            return get_error_data_result(message="Database error (Document move)!")
+
     # All validations passed, now perform all updates
     # meta_fields provided, then update it
     if "meta_fields" in req:
@@ -287,9 +299,13 @@ async def update_document(tenant_id, dataset_id, document_id):
         if error := reset_document_for_reparse(doc, tenant_id):
             return error
 
-    if "enabled" in req:  # already checked in UpdateDocumentReq - it's int if present
-        # "enabled" flag provided, the update method will check if it's changed and then update if so
-        if error := update_document_status_only(int(req["enabled"]), doc, kb):
+    if "enabled" in req or "obsolete" in req:
+        if error := update_document_retrievability(
+            doc,
+            kb,
+            status=int(req["enabled"]) if "enabled" in req else None,
+            obsolete=update_doc_req.obsolete if "obsolete" in req else None,
+        ):
             return error
 
     try:
@@ -340,6 +356,17 @@ async def metadata_summary(dataset_id, tenant_id):
         return get_result(data={"summary": summary})
     except Exception as e:
         return server_error_response(e)
+
+
+def _metadata_eligible_document_ids(dataset_id: str, document_ids: set[str]) -> set[str]:
+    if not document_ids:
+        return set()
+    rows = Document.select(Document.id).where(
+        Document.kb_id == dataset_id,
+        Document.id.in_(document_ids),
+        Document.type.not_in([FileType.FOLDER.value, FileType.VIRTUAL.value]),
+    )
+    return {row.id for row in rows}
 
 
 @manager.route("/datasets/<dataset_id>/metadata/update", methods=["POST"])  # noqa: F821
@@ -419,7 +446,7 @@ async def metadata_batch_update(dataset_id, tenant_id):
         if metadata_condition.get("conditions") and not target_doc_ids:
             return get_result(data={"updated": 0, "matched_docs": 0})
 
-    target_doc_ids = list(target_doc_ids)
+    target_doc_ids = list(_metadata_eligible_document_ids(dataset_id, target_doc_ids))
     updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
     return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
 
@@ -507,12 +534,12 @@ async def upload_document(dataset_id, tenant_id):
     if upload_type == "web":
         return await _upload_web_document(dataset_id, kb, tenant_id)
 
-    if upload_type == "empty":
-        return await _upload_empty_document(dataset_id, kb, tenant_id)
+    if upload_type in {"empty", "folder"}:
+        return await _upload_empty_document(dataset_id, kb, tenant_id, upload_type)
 
     if upload_type != "local":
         return get_error_data_result(
-            message='`type` must be one of "local", "web", or "empty".',
+            message='`type` must be one of "local", "web", "empty", or "folder".',
             code=RetCode.ARGUMENT_ERROR,
         )
 
@@ -523,6 +550,10 @@ async def _upload_web_document(dataset_id, kb, tenant_id):
     form = await request.form
     name = (form.get("name") or "").strip()
     url = form.get("url")
+    parent_id = (form.get("parent_id") or "").strip() or None
+    _, parent_error = _validate_document_parent(dataset_id, parent_id)
+    if parent_error:
+        return parent_error
 
     if not name:
         return get_error_data_result(message='Lack of "name"', code=RetCode.ARGUMENT_ERROR)
@@ -559,6 +590,7 @@ async def _upload_web_document(dataset_id, kb, tenant_id):
         doc = {
             "id": get_uuid(),
             "kb_id": kb.id,
+            "parent_id": parent_id,
             "parser_id": kb.parser_id,
             "pipeline_id": kb.pipeline_id,
             "parser_config": kb.parser_config,
@@ -586,9 +618,34 @@ async def _upload_web_document(dataset_id, kb, tenant_id):
         return server_error_response(e)
 
 
-async def _upload_empty_document(dataset_id, kb, tenant_id):
+def _validate_document_parent(dataset_id, parent_id, document_id=None):
+    """Validate that a parent is a folder in this dataset and cannot form a cycle."""
+    if not parent_id:
+        return None, None
+    ok, parent = DocumentService.get_by_id(parent_id)
+    if not ok or parent.kb_id != dataset_id:
+        return None, get_error_data_result(message="Parent folder was not found in this dataset.")
+    if parent.type not in {FileType.FOLDER.value, FileType.VIRTUAL.value}:
+        return None, get_error_data_result(message="Parent must be a folder.")
+    if document_id and parent.id == document_id:
+        return None, get_error_data_result(message="A document cannot be its own parent.")
+    seen, current = set(), parent
+    while document_id and current.parent_id:
+        if current.id in seen:
+            return None, get_error_data_result(message="Invalid folder hierarchy.")
+        seen.add(current.id)
+        if current.parent_id == document_id:
+            return None, get_error_data_result(message="A folder cannot be moved into its descendant.")
+        ok, current = DocumentService.get_by_id(current.parent_id)
+        if not ok or current.kb_id != dataset_id:
+            break
+    return parent, None
+
+
+async def _upload_empty_document(dataset_id, kb, tenant_id, node_type="empty"):
     req = await get_request_json()
     name = (req.get("name") or "").strip()
+    parent_id = (req.get("parent_id") or "").strip() or None
 
     if not name:
         return get_error_data_result(message="File name can't be empty.", code=RetCode.ARGUMENT_ERROR)
@@ -597,8 +654,11 @@ async def _upload_empty_document(dataset_id, kb, tenant_id):
             message=f"File name must be {FILE_NAME_LEN_LIMIT} bytes or less.",
             code=RetCode.ARGUMENT_ERROR,
         )
-    if DocumentService.query(name=name, kb_id=dataset_id):
-        return get_error_data_result(message="Duplicated document name in the same dataset.")
+    _, parent_error = _validate_document_parent(dataset_id, parent_id)
+    if parent_error:
+        return parent_error
+    if DocumentService.query(name=name, kb_id=dataset_id, parent_id=parent_id):
+        return get_error_data_result(message="Duplicated document name in the same folder.")
 
     try:
         kb_root_folder = FileService.get_kb_folder(kb.tenant_id)
@@ -612,15 +672,19 @@ async def _upload_empty_document(dataset_id, kb, tenant_id):
             {
                 "id": get_uuid(),
                 "kb_id": kb.id,
+                "parent_id": parent_id,
                 "parser_id": kb.parser_id,
                 "pipeline_id": kb.pipeline_id,
                 "parser_config": kb.parser_config,
                 "created_by": tenant_id,
-                "type": FileType.VIRTUAL,
+                "type": FileType.FOLDER if node_type == "folder" else FileType.VIRTUAL,
                 "name": name,
-                "suffix": Path(name).suffix.lstrip("."),
+                "suffix": "" if node_type == "folder" else Path(name).suffix.lstrip("."),
                 "location": "",
                 "size": 0,
+                "status": "0",
+                "run": TaskStatus.DONE.value,
+                "progress": 1,
             }
         )
         FileService.add_file_from_kb(doc.to_dict(), kb_folder["id"], kb.tenant_id)
@@ -632,6 +696,10 @@ async def _upload_empty_document(dataset_id, kb, tenant_id):
 async def _upload_local_documents(kb, tenant_id):
     form = await request.form
     files = await request.files
+    parent_id = (form.get("parent_id") or "").strip() or None
+    _, parent_error = _validate_document_parent(kb.id, parent_id)
+    if parent_error:
+        return parent_error
     if "file" not in files:
         logging.error("No file part!")
         return get_error_data_result(message="No file part!", code=RetCode.ARGUMENT_ERROR)
@@ -684,6 +752,9 @@ async def _upload_local_documents(kb, tenant_id):
         return get_error_data_result(message=msg, code=RetCode.DATA_ERROR)
 
     files = [f[0] for f in files]  # remove the blob
+    if parent_id:
+        for doc in files:
+            DocumentService.update_by_id(doc["id"], {"parent_id": parent_id})
     return_raw_files = request.args.get("return_raw_files", "false").lower() == "true"
 
     if return_raw_files:
@@ -875,6 +946,7 @@ def _get_docs_with_request(req, dataset_id: str):
     orderby = q.get("orderby", "create_time")
     desc = str(q.get("desc", "true")).strip().lower() != "false"
     keywords = q.get("keywords", "")
+    parent_id = q.get("parent_id")
 
     # filters - align with OpenAPI parameter names
     suffix = q.getlist("suffix")
@@ -911,7 +983,7 @@ def _get_docs_with_request(req, dataset_id: str):
         doc_ids_filter = doc_ids
 
     docs, total = DocumentService.get_by_kb_id(
-        dataset_id, page, page_size, orderby, desc, keywords, run_status_converted, types, suffix, name=doc_name, doc_ids=doc_ids_filter, return_empty_metadata=return_empty_metadata
+        dataset_id, page, page_size, orderby, desc, keywords, run_status_converted, types, suffix, name=doc_name, doc_ids=doc_ids_filter, return_empty_metadata=return_empty_metadata, parent_id=parent_id
     )
 
     # time range filter (0 means no bound)
@@ -1178,6 +1250,16 @@ async def delete_documents(tenant_id, dataset_id):
         else:
             doc_ids = unique_doc_ids
 
+        # Deleting a category removes its complete subtree.  Expand before the
+        # file-service cleanup so child chunks, tasks and storage links are also
+        # removed through the normal document deletion path.
+        expanded_doc_ids = set(doc_ids)
+        for doc_id in doc_ids:
+            ok, doc = DocumentService.get_by_id(doc_id)
+            if ok and doc.type == FileType.FOLDER.value:
+                expanded_doc_ids.update(child.id for child in DocumentService.get_descendants(dataset_id, doc.id))
+        doc_ids = list(expanded_doc_ids)
+
         # Delete documents using existing FileService.delete_docs
         errors = await thread_pool_exec(FileService.delete_docs, doc_ids, tenant_id)
 
@@ -1423,7 +1505,7 @@ async def update_metadata(tenant_id, dataset_id):
             return get_result(data={"updated": 0, "matched_docs": 0})
 
     # Convert to list and perform update
-    target_doc_ids = list(target_doc_ids)
+    target_doc_ids = list(_metadata_eligible_document_ids(dataset_id, target_doc_ids))
     updated = DocMetadataService.batch_update_metadata(dataset_id, target_doc_ids, updates, deletes)
     return get_result(data={"updated": updated, "matched_docs": len(target_doc_ids)})
 
@@ -2003,35 +2085,13 @@ async def batch_update_document_status(tenant_id, dataset_id):
                 continue
 
             current_status = str(doc.status)
-            if current_status == status:
+            if current_status == status and not (status == "1" and getattr(doc, "is_obsolete", False)):
                 result[doc_id] = {"status": status}
                 continue
-            if not DocumentService.update_by_id(doc_id, {"status": str(status)}):
-                result[doc_id] = {"error": "Database error (Document update)!"}
+            if update_document_retrievability(doc, kb, status=int(status)):
+                result[doc_id] = {"error": "Document update failed."}
                 has_error = True
                 continue
-
-            status_int = int(status)
-            if getattr(doc, "chunk_num", 0) > 0:
-                try:
-                    ok = settings.docStoreConn.update(
-                        {"doc_id": doc_id},
-                        {"available_int": status_int},
-                        search.index_name(kb.tenant_id),
-                        doc.kb_id,
-                    )
-                except Exception as exc:
-                    msg = str(exc)
-                    if "3022" in msg:
-                        result[doc_id] = {"error": "Document store table missing."}
-                    else:
-                        result[doc_id] = {"error": f"Document store update failed: {msg}"}
-                    has_error = True
-                    continue
-                if not ok:
-                    result[doc_id] = {"error": "Database error (docStore update)!"}
-                    has_error = True
-                    continue
             result[doc_id] = {"status": status}
         except Exception as e:
             result[doc_id] = {"error": f"Internal server error: {str(e)}"}

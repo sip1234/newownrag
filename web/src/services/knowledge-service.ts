@@ -295,9 +295,14 @@ export const uploadDocument = async (datasetId: string, formData: FormData) => {
   return response.data;
 };
 
-export const createDocument = async (datasetId: string, name: string) => {
-  const response = await request.post(api.documentCreate(datasetId), {
-    data: { name },
+export const createDocument = async (
+  datasetId: string,
+  name: string,
+  type: 'empty' | 'folder' = 'empty',
+  parentId?: string,
+) => {
+  const response = await request.post(`${api.getDocumentList(datasetId)}?type=${type}`, {
+    data: { name, parent_id: parentId || null },
   });
   return response.data;
 };
@@ -305,13 +310,13 @@ export const createDocument = async (datasetId: string, name: string) => {
 export const renameDocument = (
   datasetId: string,
   documentId: string,
-  data: { name?: string },
+  data: Record<string, unknown>,
 ) => request.patch(api.documentRename(datasetId, documentId), { data });
 
 export const changeDocumentParser = (
   datasetId: string,
   documentId: string,
-  data: { name?: string },
+  data: Record<string, unknown>,
 ) => request.patch(api.documentChangeParser(datasetId, documentId), { data });
 
 export const deleteDocument = (datasetId: string, documentIds: string[]) =>
@@ -392,6 +397,9 @@ export const kbUpdateMetaData = (
   datasetId: string,
   data: Record<string, any>,
 ) => request.put(api.kbUpdateMetaData(datasetId), { data });
+
+export const getKbMetaDataConfig = (datasetId: string) =>
+  request.get(api.kbUpdateMetaData(datasetId));
 
 export function deletePipelineTask({
   kb_id,

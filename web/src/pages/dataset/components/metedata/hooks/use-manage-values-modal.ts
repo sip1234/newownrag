@@ -229,6 +229,16 @@ export const useManageValues = (props: IManageValuesProps) => {
     [setTempValues, setMetaData],
   );
 
+  const handleSelectTemplate = useCallback((template: IMetaDataTableData) => {
+    setTempValues(['']);
+    setMetaData({
+      ...template,
+      values: [''],
+      valueType: template.valueType || metadataValueTypeEnum.string,
+    });
+    setValueError((prev) => ({ ...prev, field: '', values: '' }));
+  }, []);
+
   const showDeleteModal = (item: string, callback: () => void) => {
     setDeleteDialogContent({
       visible: true,
@@ -259,6 +269,7 @@ export const useManageValues = (props: IManageValuesProps) => {
   return {
     metaData,
     handleClearValues,
+    handleSelectTemplate,
     tempValues,
     valueError,
     deleteDialogContent,

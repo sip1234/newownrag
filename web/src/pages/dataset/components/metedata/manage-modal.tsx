@@ -27,8 +27,8 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { Plus, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FileUp, Plus, Trash2 } from 'lucide-react';
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   getMetadataValueTypeLabel,
@@ -46,6 +46,7 @@ import {
 } from './interface';
 import { useMetadataColumns } from './manage-modal-column';
 import { ManageValuesModal } from './manage-values-modal';
+import { mergeImportedMetadata, parseImportedMetadata } from './metadata-import';
 
 type MetadataSettingsTab = 'generation' | 'built-in';
 
@@ -84,6 +85,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
 
   const [activeTab, setActiveTab] = useState<MetadataSettingsTab>('generation');
   const [currentValueIndex, setCurrentValueIndex] = useState<number>(0);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [builtInSelection, setBuiltInSelection] = useState<
     IBuiltInMetadataItem[]
   >([]);
@@ -97,6 +99,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     addUpdateValue,
     addDeleteValue,
     handleDeleteBatchRow,
+    metadataTemplates,
   } = useManageMetaDataModal(
     originalTableData,
     metadataType,
@@ -190,6 +193,27 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     setIsAddValueMode(true);
     showManageValuesModal();
   };
+  const handleImportMetadata = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = '';
+      if (!file) return;
+      try {
+        const imported = parseImportedMetadata(JSON.parse(await file.text()));
+        setTableData((current) => mergeImportedMetadata(current, imported));
+        message.success(
+          t('knowledgeDetails.metadata.importSuccess', { count: imported.length }),
+        );
+      } catch (error) {
+        message.error(
+          error instanceof Error
+            ? error.message
+            : t('knowledgeDetails.metadata.importFailed'),
+        );
+      }
+    },
+    [setTableData, t],
+  );
   const handleEditValueRow = useCallback(
     (data: IMetaDataTableData, index: number) => {
       setCurrentValueIndex(index);
@@ -384,20 +408,42 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
                       </Button>
                     )} */}
                     {isCanAdd && activeTab !== 'built-in' && (
-                      <Button
-                        variant="outline"
-                        type="button"
-                        onClick={handAddValueRow}
-                        data-testid={addButtonTestId}
-                      >
-                        <Plus />
-                        {t('common.add')}
-                      </Button>
+                      <div className="flex gap-2">
+                        <input
+                          ref={importInputRef}
+                          className="hidden"
+                          type="file"
+                          accept="application/json,.json"
+                          onChange={handleImportMetadata}
+                          data-testid="ds-settings-metadata-import-input"
+                        />
+                        <Button
+                          variant="outline"
+                          type="button"
+                          onClick={() => importInputRef.current?.click()}
+                          data-testid="ds-settings-metadata-import-btn"
+                        >
+                          <FileUp />
+                          {t('knowledgeDetails.metadata.importFields')}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          type="button"
+                          onClick={handAddValueRow}
+                          data-testid={addButtonTestId}
+                        >
+                          <Plus />
+                          {t('common.add')}
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </div>
 
                 <TabsContent value="generation">
+                  <p className="text-sm text-text-secondary">
+                    {t('knowledgeDetails.metadata.importFormat')}
+                  </p>
                   <Table rootClassName="max-h-[800px]">
                     <TableHeader>
                       {table.getHeaderGroups().map((headerGroup) => (
@@ -608,6 +654,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
           testId={nestedModalTestId}
           okButtonTestId={nestedModalOkButtonTestId}
           addValueButtonTestId="ds-settings-metadata-add-modal-add-value-btn"
+          metadataTemplates={metadataTemplates}
           //   handleDeleteSingleValue={handleDeleteSingleValue}
           //   handleDeleteSingleRow={handleDeleteSingleRow}
         />
