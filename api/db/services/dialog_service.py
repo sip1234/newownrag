@@ -34,6 +34,7 @@ from api.db.services.doc_metadata_service import DocMetadataService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.langfuse_service import TenantLangfuseService
 from api.db.services.llm_service import LLMBundle
+from api.db.services.output_rule_service import OutputRuleService
 from common.metadata_utils import apply_meta_data_filter
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
@@ -47,6 +48,7 @@ from rag.advanced_rag import DeepResearcher
 from rag.app.tag import label_question
 from rag.nlp.search import index_name
 from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, PROMPT_JINJA_ENV, ASK_SUMMARY
+from rag.rules.output_rules import apply_rule_action, evaluate_output_rules, evaluate_stronger_rules, select_rule, visible_response
 from common.token_utils import num_tokens_from_string
 from rag.utils.tavily_conn import Tavily
 from rag.utils.tts_cache import synthesize_with_cache
@@ -542,7 +544,7 @@ def repair_bad_citation_formats(answer: str, kbinfos: dict, idx: set):
     return answer, idx
 
 
-async def async_chat(dialog, messages, stream=True, **kwargs):
+async def _async_chat(dialog, messages, stream=True, **kwargs):
     logging.debug("Begin async_chat")
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     session_id = kwargs.get("session_id")
@@ -933,6 +935,91 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         yield res
 
     return
+
+
+async def async_chat(dialog, messages, stream=True, **kwargs):
+    """Generate a chat response and enforce tenant input/output rules.
+
+    User input is checked before calling the model. When the input does not
+    match, streaming output is buffered until the model completes so a matching
+    generated response cannot reach the client before its rule check runs.
+    """
+    rules = OutputRuleService.list_by_tenant(dialog.tenant_id, enabled_only=True)
+    user_input = messages[-1].get("content", "") if messages else ""
+    input_rule = evaluate_output_rules(user_input, rules) if rules else None
+    blocking_input_rule = input_rule if input_rule and input_rule["action_type"] == "reject" else None
+    direct_answer_rule = input_rule if input_rule and input_rule["action_type"] == "direct_answer" else None
+    if blocking_input_rule:
+        rule_info = {key: blocking_input_rule[key] for key in ("id", "name", "priority", "action_type")}
+        response_event = {
+            "answer": blocking_input_rule["response_content"],
+            "reference": {},
+            "audio_binary": None,
+            "final": False,
+            "output_rule": rule_info,
+        }
+        yield response_event
+        if stream:
+            yield {"answer": "", "reference": {}, "audio_binary": None, "final": True, "output_rule": rule_info}
+        return
+
+    if not rules:
+        async for event in _async_chat(dialog, messages, stream, **kwargs):
+            yield event
+        return
+
+    events = []
+    async for event in _async_chat(dialog, messages, stream, **kwargs):
+        events.append(event)
+
+    final_event = next((event for event in reversed(events) if event.get("final")), None)
+    final_answer = (final_event or {}).get("answer")
+    if final_answer:
+        generated_output = visible_response(final_answer)
+    else:
+        visible_chunks = []
+        in_think = False
+        for event in events:
+            if event.get("start_to_think"):
+                in_think = True
+                continue
+            if event.get("end_to_think"):
+                in_think = False
+                continue
+            if not event.get("final") and not in_think:
+                visible_chunks.append(event.get("answer", ""))
+        generated_output = visible_response("".join(visible_chunks))
+    output_rule = (
+        evaluate_stronger_rules(generated_output, rules, direct_answer_rule["priority"])
+        if direct_answer_rule
+        else evaluate_output_rules(generated_output, rules)
+    )
+    matched_rule = select_rule(input_rule if input_rule and input_rule["action_type"] == "guidance" else None, output_rule)
+    if not matched_rule:
+        for event in events:
+            yield event
+        return
+
+    rule_info = {key: matched_rule[key] for key in ("id", "name", "priority", "action_type")}
+    replacement = apply_rule_action(generated_output, matched_rule)
+    if not stream:
+        result = deepcopy(final_event or events[-1] if events else {})
+        result.update({"answer": replacement, "reference": {}, "output_rule": rule_info})
+        yield result
+        return
+
+    response_event = {
+        "answer": replacement,
+        "reference": {},
+        "audio_binary": None,
+        "final": False,
+        "output_rule": rule_info,
+    }
+    yield response_event
+    if final_event:
+        completion_event = deepcopy(final_event)
+        completion_event.update({"answer": "", "reference": {}, "audio_binary": None, "final": True, "output_rule": rule_info})
+        yield completion_event
 
 
 async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):

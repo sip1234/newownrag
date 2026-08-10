@@ -68,7 +68,8 @@ export default function DatasetSettings() {
     defaultValues: {
       name: '',
       chunk_method: DocumentParserType.Naive,
-      permission: PermissionRole.Me,
+      control_permission: PermissionRole.Me,
+      view_permission: PermissionRole.Me,
       language: 'English',
       parser_config: {
         layout_recognize: DocumentType.DeepDOC,

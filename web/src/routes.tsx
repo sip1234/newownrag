@@ -43,6 +43,7 @@ export enum Routes {
   Plan = '/plan',
   Model = '/model',
   Prompt = '/prompt',
+  RuleManagement = '/rule-management',
   DataSource = '/data-source',
   DataSourceDetailPage = '/data-source-detail-page',
   ChatChannel = '/chat-channel',
@@ -51,6 +52,7 @@ export enum Routes {
   ProfilePlan = `${ProfileSetting}${Plan}`,
   ProfileModel = `${ProfileSetting}${Model}`,
   ProfilePrompt = `${ProfileSetting}${Prompt}`,
+  ProfileRuleManagement = `${ProfileSetting}${RuleManagement}`,
   ProfileProfile = `${ProfileSetting}${Profile}`,
   DatasetTesting = '/retrieval',
   Chunk = '/chunk',
@@ -277,6 +279,14 @@ const routeConfigOptions = [
           {
             path: `${Routes.UserSetting}/model`,
             Component: () => import('@/pages/user-setting/setting-model'),
+          },
+          {
+            path: `${Routes.UserSetting}${Routes.Prompt}`,
+            Component: () => import('@/pages/user-setting/prompt-display'),
+          },
+          {
+            path: `${Routes.UserSetting}${Routes.RuleManagement}`,
+            Component: () => import('@/pages/user-setting/rule-management'),
           },
           {
             path: `${Routes.UserSetting}/team`,

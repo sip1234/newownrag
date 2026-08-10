@@ -12,13 +12,15 @@ import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
 import {
+  FileText,
   LucideBox,
-  LucideMessagesSquare,
   LucideLogOut,
+  LucideMessagesSquare,
   LucideServer,
   LucideUnplug,
   LucideUser,
   LucideUsers,
+  ShieldCheck,
 } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -40,6 +42,18 @@ const menuItems = (t: TFunction) => [
     label: t('setting.model'),
     key: Routes.Model,
     'data-testid': 'settings-nav-model-providers',
+  },
+  {
+    icon: <FileText className="size-[1em]" />,
+    label: t('setting.promptDisplay'),
+    key: Routes.Prompt,
+    'data-testid': 'settings-nav-prompt-display',
+  },
+  {
+    icon: <ShieldCheck className="size-[1em]" />,
+    label: t('setting.ruleManagement'),
+    key: Routes.RuleManagement,
+    'data-testid': 'settings-nav-rule-management',
   },
   {
     icon: <IconFontFill name="mcp" className="size-[1em]" />,

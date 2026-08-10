@@ -24,11 +24,13 @@ from api.db import CanvasCategory, TenantPermission
 from api.db.db_models import DB, CanvasTemplate, User, UserCanvas, API4Conversation, UserCanvasVersion
 from api.db.services.api_service import API4ConversationService
 from api.db.services.common_service import CommonService
+from api.db.services.output_rule_service import OutputRuleService
 from api.db.services.user_canvas_version import UserCanvasVersionService
 from common.misc_utils import get_uuid, thread_pool_exec
 from api.utils.api_utils import get_data_openai
 import tiktoken
 from peewee import fn
+from rag.rules.output_rules import apply_rule_action, evaluate_output_rules, evaluate_stronger_rules, select_rule, visible_response
 
 
 class CanvasTemplateService(CommonService):
@@ -343,18 +345,72 @@ async def completion(tenant_id, agent_id, session_id=None, **kwargs):
     if chat_template_kwargs is not None:
         run_kwargs["chat_template_kwargs"] = chat_template_kwargs
 
+    rules = OutputRuleService.list_by_tenant(tenant_id, enabled_only=True)
+    input_rule = evaluate_output_rules(query, rules) if rules else None
+    blocking_input_rule = input_rule if input_rule and input_rule["action_type"] == "reject" else None
+    direct_answer_rule = input_rule if input_rule and input_rule["action_type"] == "direct_answer" else None
+    buffered_events = []
     try:
-        async for ans in canvas.run(**run_kwargs):
-            ans["session_id"] = session_id
-            if ans["event"] == "message":
-                txt += ans["data"]["content"]
-                if ans["data"].get("start_to_think", False):
-                    txt += "<think>"
-                elif ans["data"].get("end_to_think", False):
-                    txt += "</think>"
-            yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+        if blocking_input_rule:
+            txt = apply_rule_action("", blocking_input_rule)
+            rule_info = {key: blocking_input_rule[key] for key in ("id", "name", "priority", "action_type")}
+            input_event = {
+                "event": "message",
+                "data": {"content": txt, "output_rule": rule_info},
+                "session_id": session_id,
+            }
+            yield "data:" + json.dumps(input_event, ensure_ascii=False) + "\n\n"
+            yield "data:" + json.dumps({"event": "message_end", "data": {}, "session_id": session_id}, ensure_ascii=False) + "\n\n"
+        else:
+            async for ans in canvas.run(**run_kwargs):
+                ans["session_id"] = session_id
+                if ans["event"] == "message":
+                    txt += ans["data"]["content"]
+                    if ans["data"].get("start_to_think", False):
+                        txt += "<think>"
+                    elif ans["data"].get("end_to_think", False):
+                        txt += "</think>"
+                if rules:
+                    buffered_events.append(ans)
+                else:
+                    yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
     finally:
         canvas.close()
+
+    visible_output = visible_response(txt)
+    output_rule = (
+        evaluate_stronger_rules(visible_output, rules, direct_answer_rule["priority"])
+        if rules and direct_answer_rule and not blocking_input_rule
+        else evaluate_output_rules(visible_output, rules) if rules and not blocking_input_rule else None
+    )
+    matched_rule = select_rule(input_rule if input_rule and input_rule["action_type"] == "guidance" else None, output_rule)
+    if rules and not blocking_input_rule:
+        if not matched_rule:
+            for ans in buffered_events:
+                yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+        else:
+            rule_info = {key: matched_rule[key] for key in ("id", "name", "priority", "action_type")}
+            txt = apply_rule_action(visible_output, matched_rule)
+            emitted_replacement = False
+            for ans in buffered_events:
+                if ans.get("event") == "message":
+                    continue
+                if ans.get("event") == "message_end" and not emitted_replacement:
+                    replacement_event = {
+                        "event": "message",
+                        "data": {"content": txt, "output_rule": rule_info},
+                        "session_id": session_id,
+                    }
+                    yield "data:" + json.dumps(replacement_event, ensure_ascii=False) + "\n\n"
+                    emitted_replacement = True
+                yield "data:" + json.dumps(ans, ensure_ascii=False) + "\n\n"
+            if not emitted_replacement:
+                replacement_event = {
+                    "event": "message",
+                    "data": {"content": txt, "output_rule": rule_info},
+                    "session_id": session_id,
+                }
+                yield "data:" + json.dumps(replacement_event, ensure_ascii=False) + "\n\n"
 
     conv.message.append({"role": "assistant", "content": txt, "created_at": time.time(), "id": message_id})
     current_reference = canvas.get_reference()

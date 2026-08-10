@@ -315,6 +315,12 @@ export default {
     `${restAPIv1}/mcp/servers/${id}?mode=download`,
   testMcpServer: (id: string) => `${restAPIv1}/mcp/servers/${id}/test`,
 
+  // output rules
+  listOutputRules: `${restAPIv1}/output-rules`,
+  createOutputRule: `${restAPIv1}/output-rules`,
+  updateOutputRule: (id: string) => `${restAPIv1}/output-rules/${id}`,
+  deleteOutputRule: (id: string) => `${restAPIv1}/output-rules/${id}`,
+
   // next-search
   createSearch: `${restAPIv1}/searches`,
   getSearchList: `${restAPIv1}/searches`,

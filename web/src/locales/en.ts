@@ -414,7 +414,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         importFields: 'Import fields',
         importFormat:
           'JSON format: [{"key":"department","type":"string","description":"...","enum":["Finance"]}]. Supported types: string, list, time, number.',
-        importSuccess: 'Imported {{count}} metadata fields. Save to apply them.',
+        importSuccess:
+          'Imported {{count}} metadata fields. Save to apply them.',
         importFailed: 'Unable to import metadata fields.',
         predefinedField: 'Predefined field',
         selectPredefinedField: 'Select a predefined field',
@@ -717,14 +718,17 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       language: 'Document language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'Please input your language!',
-      permissions: 'Permissions',
+      controlPermissions: 'Control permissions',
+      viewPermissions: 'View permissions',
       embeddingModel: 'Embedding model',
       chunkTokenNumber: 'Recommended chunk size',
       chunkTokenNumberMessage: 'Chunk token number for text is required',
       embeddingModelTip:
         'The default embedding model used by the dataset. Once the dataset has chunks, when switching the embedding model, the system randomly samples a few chunks for a compatibility check, re-embeds them with the new embedding model, and computes cosine similarity between the new and old vectors. Switching is allowed only when the average similarity of the sample is ≥ 0.9. Otherwise, you must delete all chunks in the dataset before you can change it.',
-      permissionsTip:
-        "If it is set to 'Team', all your team members will be able to manage the dataset.",
+      controlPermissionsTip:
+        'Control permissions determine who can modify the dataset, documents, and configuration.',
+      viewPermissionsTip:
+        'View permissions determine who can view and retrieve the dataset. Everyone does not require team membership.',
       chunkTokenNumberTip:
         'It kind of sets the token threshold for a creating a chunk. A segment with fewer tokens than this threshold will be combined with the following segments until the token count exceeds the threshold, at which point a chunk is created. No new chunk is created unless a delimiter is encountered, even if the threshold is exceeded.',
       chunkMethod: 'Chunking method',
@@ -769,6 +773,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       save: 'Save',
       me: 'Only me',
       team: 'Team',
+      all: 'Everyone',
       cancel: 'Cancel',
       methodTitle: 'Chunking method description',
       methodExamples: 'Examples',
@@ -1597,6 +1602,48 @@ Example: Virtual Hosted Style`,
       model: 'Model providers',
       systemModelDescription: 'Please complete these settings before beginning',
       dataSources: 'Data sources',
+      promptDisplay: 'Prompt display',
+      promptDisplayDescription:
+        'View the preset prompts used by the system. Preset prompts are read-only.',
+      presetPromptType: 'Preset prompt type',
+      promptContent: 'Prompt content',
+      promptContentDescription:
+        'This prompt is managed by the system and cannot be edited here.',
+      promptSelectionSaved: 'Preset prompt selection saved.',
+      noPresetPrompts: 'No preset prompts are available.',
+      ruleManagement: 'Rule management',
+      ruleManagementDescription:
+        'Apply deterministic rules to user questions and completed model responses.',
+      ruleExecutionNote:
+        'Questions are checked before the model runs; generated responses are checked after they finish. Reject-answer rules return their configured response. Guidance rules append their configured message. Direct-answer rules do not alter content; they prevent lower-priority rules from intervening. Lower priority values run first.',
+      addRule: 'Add rule',
+      editRule: 'Edit rule',
+      noRules: 'No rules have been created.',
+      ruleEditorDescription:
+        'Add one or more keyword and regular-expression conditions. Any condition can trigger the rule.',
+      ruleName: 'Rule name',
+      priority: 'Priority',
+      keywords: 'Keyword conditions',
+      keyword: 'Keyword',
+      keywordPlaceholder: 'Enter a keyword',
+      regexPatterns: 'Regular-expression conditions',
+      regexPlaceholder: 'Enter a regular expression',
+      ruleAction: 'Triggered action',
+      ruleResponse: 'Response content',
+      enableRule: 'Enable rule',
+      ruleRequiredFields:
+        'Enter a rule name and at least one condition. Reject-answer and guidance rules also need response content.',
+      ruleActions: {
+        reject: 'Reject answer',
+        guidance: 'Ask for more information',
+        direct_answer: 'Direct answer (priority protection)',
+      },
+      promptTypes: {
+        task_analysis: 'Task analysis',
+        plan_generation: 'Plan generation',
+        reflection: 'Reflection',
+        citation_guidelines: 'Citation guidelines',
+      },
       team: 'Team',
       system: 'System',
       logout: 'Log out',
@@ -2254,7 +2301,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       bGPTDescription:
         'Search scientific papers via BGPT and return structured evidence from full-text studies: methods, sample sizes, limitations, conflicts of interest, data availability, blind spots, and falsification prompts. Optional API key after the free tier.',
       bgptApiKey: 'API key',
-      bgptApiKeyTip: 'Optional. Leave blank for the free tier (first 50 results).',
+      bgptApiKeyTip:
+        'Optional. Leave blank for the free tier (first 50 results).',
       bgptDaysBack: 'Days back',
       bgptDaysBackTip: 'Optional recency filter (e.g. 365 for the last year).',
       email: 'Email',

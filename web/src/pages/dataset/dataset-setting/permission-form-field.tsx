@@ -6,7 +6,13 @@ import { useTranslation } from 'react-i18next';
 
 export function PermissionFormField() {
   const { t } = useTranslation();
-  const teamOptions = useMemo(() => {
+  const controlOptions = useMemo(() => {
+    return [PermissionRole.Me, PermissionRole.Team].map((x) => ({
+      label: t('knowledgeConfiguration.' + x),
+      value: x,
+    }));
+  }, [t]);
+  const viewOptions = useMemo(() => {
     return Object.values(PermissionRole).map((x) => ({
       label: t('knowledgeConfiguration.' + x),
       value: x,
@@ -14,17 +20,31 @@ export function PermissionFormField() {
   }, [t]);
 
   return (
-    <RAGFlowFormItem
-      name="permission"
-      label={t('knowledgeConfiguration.permissions')}
-      tooltip={t('knowledgeConfiguration.permissionsTip')}
-      horizontal
-    >
-      <SelectWithSearch
-        options={teamOptions}
-        triggerClassName="w-full"
-        testId="ds-settings-basic-permissions-select"
-      ></SelectWithSearch>
-    </RAGFlowFormItem>
+    <>
+      <RAGFlowFormItem
+        name="control_permission"
+        label={t('knowledgeConfiguration.controlPermissions')}
+        tooltip={t('knowledgeConfiguration.controlPermissionsTip')}
+        horizontal
+      >
+        <SelectWithSearch
+          options={controlOptions}
+          triggerClassName="w-full"
+          testId="ds-settings-control-permissions-select"
+        />
+      </RAGFlowFormItem>
+      <RAGFlowFormItem
+        name="view_permission"
+        label={t('knowledgeConfiguration.viewPermissions')}
+        tooltip={t('knowledgeConfiguration.viewPermissionsTip')}
+        horizontal
+      >
+        <SelectWithSearch
+          options={viewOptions}
+          triggerClassName="w-full"
+          testId="ds-settings-view-permissions-select"
+        />
+      </RAGFlowFormItem>
+    </>
   );
 }

@@ -835,6 +835,24 @@ class TenantLangfuse(DataBaseModel):
         db_table = "tenant_langfuse"
 
 
+class OutputRule(DataBaseModel):
+    """A tenant-owned rule applied after an LLM has finished generating."""
+
+    id = CharField(max_length=32, primary_key=True)
+    tenant_id = CharField(max_length=32, null=False, index=True)
+    name = CharField(max_length=128, null=False, index=True)
+    keywords = ListField(null=False, default=list)
+    regex_patterns = ListField(null=False, default=list)
+    action_type = CharField(max_length=32, null=False, index=True)
+    response_content = TextField(null=False)
+    priority = IntegerField(null=False, default=100, index=True)
+    enabled = BooleanField(null=False, default=True, index=True)
+
+    class Meta:
+        db_table = "output_rule"
+        indexes = ((('tenant_id', 'priority'), False),)
+
+
 class Knowledgebase(DataBaseModel):
     id = CharField(max_length=32, primary_key=True)
     avatar = TextField(null=True, help_text="avatar base64 string")
@@ -844,7 +862,8 @@ class Knowledgebase(DataBaseModel):
     description = TextField(null=True, help_text="KB description")
     embd_id = CharField(max_length=128, null=False, help_text="default embedding model ID", index=True)
     tenant_embd_id = IntegerField(null=True, help_text="id in tenant_llm", index=True)
-    permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
+    control_permission = CharField(max_length=16, null=False, help_text="me|team", default="me", index=True)
+    view_permission = CharField(max_length=16, null=False, help_text="me|team|all", default="me", index=True)
     created_by = CharField(max_length=32, null=False, index=True)
     doc_num = IntegerField(default=0, index=True)
     token_num = IntegerField(default=0, index=True)
@@ -1751,6 +1770,11 @@ def migrate_db():
     alter_db_add_column(migrator, "tenant_llm", "max_tokens", IntegerField(default=8192, index=True))
     alter_db_add_column(migrator, "api_4_conversation", "dsl", JSONField(null=True, default={}))
     alter_db_add_column(migrator, "knowledgebase", "pagerank", IntegerField(default=0, index=False))
+    alter_db_add_column(migrator, "knowledgebase", "control_permission", CharField(max_length=16, null=True, help_text="me|team", index=True))
+    alter_db_add_column(migrator, "knowledgebase", "view_permission", CharField(max_length=16, null=True, help_text="me|team|all", index=True))
+    if "permission" in {column.name for column in DB.get_columns("knowledgebase")}:
+        DB.execute_sql("UPDATE knowledgebase SET control_permission = permission WHERE control_permission IS NULL")
+        DB.execute_sql("UPDATE knowledgebase SET view_permission = permission WHERE view_permission IS NULL")
     alter_db_add_column(migrator, "api_token", "beta", CharField(max_length=255, null=True, index=True))
     alter_db_add_column(migrator, "task", "digest", TextField(null=True, help_text="task digest", default=""))
     alter_db_add_column(migrator, "task", "chunk_ids", LongTextField(null=True, help_text="chunk ids", default=""))

@@ -134,8 +134,8 @@ async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = F
 
     error_kb_ids = []
     for kb_id in ids:
-        kb = KnowledgebaseService.get_or_none(id=kb_id, tenant_id=tenant_id)
-        if kb is None:
+        kb = KnowledgebaseService.get_or_none(id=kb_id)
+        if kb is None or not KnowledgebaseService.controllable(kb_id, tenant_id):
             error_kb_ids.append(kb_id)
             continue
         kb_id_instance_pairs.append((kb_id, kb))
@@ -256,8 +256,8 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     if not req:
         return False, "No properties were modified"
 
-    kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
-    if kb is None:
+    kb = KnowledgebaseService.get_or_none(id=dataset_id)
+    if kb is None or not KnowledgebaseService.controllable(dataset_id, tenant_id):
         return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
 
     # Extract ext field for additional parameters
@@ -460,7 +460,7 @@ def delete_knowledge_graph(dataset_id: str, tenant_id: str):
     :param tenant_id: tenant ID
     :return: (success, result) or (success, error_message)
     """
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+    if not KnowledgebaseService.controllable(dataset_id, tenant_id):
         return False, "No authorization."
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
     from rag.nlp import search
@@ -492,7 +492,7 @@ def run_index(dataset_id: str, tenant_id: str, index_type: str):
 
     if not dataset_id:
         return False, 'Lack of "Dataset ID"'
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+    if not KnowledgebaseService.controllable(dataset_id, tenant_id):
         return False, "No authorization."
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
@@ -650,8 +650,8 @@ def get_auto_metadata(dataset_id: str, tenant_id: str):
     :param tenant_id: tenant ID
     :return: (success, result) or (success, error_message)
     """
-    kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
-    if kb is None:
+    kb = KnowledgebaseService.get_or_none(id=dataset_id)
+    if kb is None or not KnowledgebaseService.accessible(dataset_id, tenant_id):
         return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
     parser_cfg = kb.parser_config or {}
     return True, {"metadata": parser_cfg.get("metadata") or [], "built_in_metadata": parser_cfg.get("built_in_metadata") or []}
@@ -666,8 +666,8 @@ async def update_auto_metadata(dataset_id: str, tenant_id: str, cfg: dict):
     :param cfg: auto-metadata configuration
     :return: (success, result) or (success, error_message)
     """
-    kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
-    if kb is None:
+    kb = KnowledgebaseService.get_or_none(id=dataset_id)
+    if kb is None or not KnowledgebaseService.controllable(dataset_id, tenant_id):
         return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
 
     parser_cfg = kb.parser_config or {}
@@ -692,7 +692,7 @@ def delete_tags(dataset_id: str, tenant_id: str, tags: list[str]):
     if not dataset_id:
         return False, 'Lack of "Dataset ID"'
 
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+    if not KnowledgebaseService.controllable(dataset_id, tenant_id):
         return False, "No authorization."
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
@@ -823,7 +823,7 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = 
     if not dataset_id:
         return False, 'Lack of "Dataset ID"'
 
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+    if not KnowledgebaseService.controllable(dataset_id, tenant_id):
         return False, "No authorization."
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
@@ -878,7 +878,7 @@ def run_embedding(dataset_id: str, tenant_id: str):
     if not dataset_id:
         return False, 'Lack of "Dataset ID"'
 
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+    if not KnowledgebaseService.controllable(dataset_id, tenant_id):
         return False, "No authorization."
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
@@ -920,7 +920,7 @@ def rename_tag(dataset_id: str, tenant_id: str, from_tag: str, to_tag: str):
     if not dataset_id:
         return False, 'Lack of "Dataset ID"'
 
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+    if not KnowledgebaseService.controllable(dataset_id, tenant_id):
         return False, "No authorization."
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
@@ -1907,7 +1907,7 @@ async def update_wiki_page(
     ``(True, None)`` when the row is missing, or
     ``(False, message)`` on authorization failure.
     """
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+    if not KnowledgebaseService.controllable(dataset_id, tenant_id):
         return False, "No authorization."
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
@@ -2479,7 +2479,7 @@ async def clear_wiki(dataset_id: str, tenant_id: str):
     Returns ``(True, {"deleted": {kwd: count_or_True}})`` on success or
     ``(False, str)`` on auth failure.
     """
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+    if not KnowledgebaseService.controllable(dataset_id, tenant_id):
         return False, "No authorization."
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 

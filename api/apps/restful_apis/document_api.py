@@ -222,7 +222,7 @@ async def update_document(tenant_id, dataset_id, document_id):
     req = await get_request_json()
 
     # Verify ownership and existence of dataset and document
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    if not KnowledgebaseService.controllable(dataset_id, tenant_id):
         return get_error_data_result(message="You don't own the dataset.")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
@@ -403,7 +403,7 @@ async def metadata_batch_update(dataset_id, tenant_id):
       200:
         description: Metadata updated successfully.
     """
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+    if not KnowledgebaseService.controllable(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
 
     req = await get_request_json()
@@ -1224,7 +1224,7 @@ async def delete_documents(tenant_id, dataset_id):
 
     try:
         # Validate dataset exists and user has permission
-        if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+        if not KnowledgebaseService.controllable(kb_id=dataset_id, user_id=tenant_id):
             return get_error_data_result(message=f"You don't own the dataset {dataset_id}. ")
 
         # Get documents to delete
@@ -1314,7 +1314,7 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
         description: Document updated successfully.
     """
     # Verify ownership and existence of dataset
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    if not KnowledgebaseService.controllable(dataset_id, tenant_id):
         return get_error_data_result(message="You don't own the dataset.")
 
     # Verify document exists in the dataset
@@ -1450,7 +1450,7 @@ async def update_metadata(tenant_id, dataset_id):
         description: Metadata updated successfully.
     """
     # Verify ownership of dataset
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+    if not KnowledgebaseService.controllable(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
 
     # Get request body
@@ -1625,7 +1625,7 @@ async def parse_documents(tenant_id, dataset_id):
       200:
         description: Successful operation.
     """
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+    if not KnowledgebaseService.controllable(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
 
     req = await get_request_json()
@@ -1738,7 +1738,7 @@ async def stop_parse_documents(tenant_id, dataset_id):
       200:
         description: Successful operation.
     """
-    if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=tenant_id):
+    if not KnowledgebaseService.controllable(kb_id=dataset_id, user_id=tenant_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
 
     req = await get_request_json()
@@ -2060,8 +2060,8 @@ async def batch_update_document_status(tenant_id, dataset_id):
     if status not in ["0", "1"]:
         return get_error_argument_result(message=f'"Status" must be either 0 or 1:{status}!')
 
-    # Verify dataset ownership
-    if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
+    # Verify dataset control permission
+    if not KnowledgebaseService.controllable(dataset_id, tenant_id):
         return get_error_data_result(message="You don't own the dataset.")
 
     e, kb = KnowledgebaseService.get_by_id(dataset_id)

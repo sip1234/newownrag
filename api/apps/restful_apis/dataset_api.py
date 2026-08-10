@@ -116,10 +116,14 @@ async def create(tenant_id: str = None):
             embedding_model:
               type: string
               description: Optional embedding model name; if omitted, the tenant's default embedding model is used.
-            permission:
+            control_permission:
               type: string
               enum: ['me', 'team']
-              description: Visibility of the dataset (private to me or shared with team).
+              description: Who can modify the dataset and its content.
+            view_permission:
+              type: string
+              enum: ['me', 'team', 'all']
+              description: Who can view and retrieve the dataset.
             chunk_method:
               type: string
               enum: ["naive", "book", "email", "laws", "manual", "one", "paper",
@@ -258,10 +262,14 @@ async def update(tenant_id, dataset_id):
             embedding_model:
               type: string
               description: Updated embedding model Name.
-            permission:
+            control_permission:
               type: string
               enum: ['me', 'team']
-              description: Updated dataset permission.
+              description: Updated control permission.
+            view_permission:
+              type: string
+              enum: ['me', 'team', 'all']
+              description: Updated view permission.
             chunk_method:
               type: string
               enum: ["naive", "book", "email", "laws", "manual", "one", "paper",

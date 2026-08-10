@@ -56,11 +56,16 @@ class KnowledgebaseService(CommonService):
         for a given user, combined with a valid-status constraint.
 
         Visibility rules:
-        - Team KBs (`permission == TenantPermission.TEAM`) owned by any tenant in `joined_tenant_ids`
+        - Public KBs (`view_permission == TenantPermission.ALL`)
+        - Team-viewable KBs owned by any tenant in `joined_tenant_ids`
         - KBs owned by the current user (`tenant_id == user_id`)
         Always constrained to `StatusEnum.VALID`.
         """
-        return ((cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.permission == TenantPermission.TEAM.value)) | (cls.model.tenant_id == user_id)) & (cls.model.status == StatusEnum.VALID.value)
+        return (
+            (cls.model.view_permission == TenantPermission.ALL.value)
+            | (cls.model.tenant_id.in_(joined_tenant_ids) & (cls.model.view_permission == TenantPermission.TEAM.value))
+            | (cls.model.tenant_id == user_id)
+        ) & (cls.model.status == StatusEnum.VALID.value)
 
     @classmethod
     @DB.connection_context()
@@ -164,7 +169,8 @@ class KnowledgebaseService(CommonService):
             cls.model.language,
             cls.model.description,
             cls.model.tenant_id,
-            cls.model.permission,
+            cls.model.control_permission,
+            cls.model.view_permission,
             cls.model.doc_num,
             cls.model.token_num,
             cls.model.chunk_num,
@@ -213,7 +219,8 @@ class KnowledgebaseService(CommonService):
             cls.model.name,
             cls.model.avatar,
             cls.model.language,
-            cls.model.permission,
+            cls.model.control_permission,
+            cls.model.view_permission,
             cls.model.doc_num,
             cls.model.token_num,
             cls.model.chunk_num,
@@ -267,7 +274,8 @@ class KnowledgebaseService(CommonService):
             cls.model.name,
             cls.model.language,
             cls.model.description,
-            cls.model.permission,
+            cls.model.control_permission,
+            cls.model.view_permission,
             cls.model.doc_num,
             cls.model.token_num,
             cls.model.chunk_num,
@@ -417,7 +425,7 @@ class KnowledgebaseService(CommonService):
             "tenant_id": tenant_id,
             "created_by": tenant_id,
             "parser_id": (parser_id or "naive"),
-            **kwargs,  # Includes optional fields such as description, language, permission, avatar, parser_config, etc.
+            **kwargs,  # Includes optional fields such as description, language, permissions, avatar, parser_config, etc.
         }
 
         # Update parser_config (always override with validated default/merged config)
@@ -482,12 +490,36 @@ class KnowledgebaseService(CommonService):
         if kb.status != StatusEnum.VALID.value:
             return False
 
+        return cls.viewable(kb, user_id)
+
+    @classmethod
+    @DB.connection_context()
+    def viewable(cls, kb: Knowledgebase | str, user_id: str) -> bool:
+        """Return whether a user can view a valid knowledgebase."""
+        if isinstance(kb, str):
+            exists, kb = cls.get_by_id(kb)
+            if not exists:
+                return False
+        if kb.status != StatusEnum.VALID.value:
+            return False
+        if kb.tenant_id == user_id or kb.view_permission == TenantPermission.ALL.value:
+            return True
+        if kb.view_permission != TenantPermission.TEAM.value:
+            return False
+        joined_tenants = TenantService.get_joined_tenants_by_user_id(user_id)
+        return any(tenant["tenant_id"] == kb.tenant_id for tenant in joined_tenants)
+
+    @classmethod
+    @DB.connection_context()
+    def controllable(cls, kb_id: str, user_id: str) -> bool:
+        """Return whether a user can change a valid knowledgebase."""
+        exists, kb = cls.get_by_id(kb_id)
+        if not exists or kb.status != StatusEnum.VALID.value:
+            return False
         if kb.tenant_id == user_id:
             return True
-
-        if kb.permission != TenantPermission.TEAM.value:
+        if kb.control_permission != TenantPermission.TEAM.value:
             return False
-
         joined_tenants = TenantService.get_joined_tenants_by_user_id(user_id)
         return any(tenant["tenant_id"] == kb.tenant_id for tenant in joined_tenants)
 

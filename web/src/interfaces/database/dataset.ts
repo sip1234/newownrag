@@ -33,7 +33,8 @@ export interface IDataset {
   nickname: string;
   pagerank: number;
   parser_config: Parserconfig;
-  permission: string;
+  control_permission: string;
+  view_permission: string;
   pipeline_id: string;
   raptor_task_finish_at: string;
   raptor_task_id: string;

@@ -30,7 +30,7 @@ def check_kb_team_permission(kb: dict | Knowledgebase, other: str) -> bool:
     if kb_tenant_id == other:
         return True
 
-    if kb["permission"] != TenantPermission.TEAM:
+    if kb["control_permission"] != TenantPermission.TEAM:
         return False
 
     joined_tenants = TenantService.get_joined_tenants_by_user_id(other)
