@@ -6,6 +6,9 @@ const presetPromptOrder = [
 ];
 
 const selectedPresetPromptStorageKey = 'ragflow.selected-preset-prompt';
+const customPromptsStorageKey = 'ragflow.custom-prompts';
+
+export type CustomPrompts = Record<string, string>;
 
 export const getSavedPresetPromptKey = () => {
   if (typeof window === 'undefined') {
@@ -17,6 +20,29 @@ export const getSavedPresetPromptKey = () => {
 
 export const savePresetPromptKey = (key: string) => {
   window.localStorage.setItem(selectedPresetPromptStorageKey, key);
+};
+
+export const getCustomPrompts = (): CustomPrompts => {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  try {
+    const prompts = JSON.parse(
+      window.localStorage.getItem(customPromptsStorageKey) ?? '{}',
+    );
+    return prompts && typeof prompts === 'object' && !Array.isArray(prompts)
+      ? prompts
+      : {};
+  } catch {
+    return {};
+  }
+};
+
+export const saveCustomPrompt = (name: string, content: string) => {
+  const prompts = getCustomPrompts();
+  prompts[name] = content;
+  window.localStorage.setItem(customPromptsStorageKey, JSON.stringify(prompts));
 };
 
 export const sortPresetPromptKeys = (keys: string[]) => {

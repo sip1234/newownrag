@@ -1604,13 +1604,34 @@ Example: Virtual Hosted Style`,
       dataSources: 'Data sources',
       promptDisplay: 'Prompt display',
       promptDisplayDescription:
-        'View the preset prompts used by the system. Preset prompts are read-only.',
+        'View and manage prompts, then apply one as a chat assistant system prompt.',
       presetPromptType: 'Preset prompt type',
       promptContent: 'Prompt content',
       promptContentDescription:
-        'This prompt is managed by the system and cannot be edited here.',
+        'Edit and save this prompt directly. Applying it sets the content as the selected chat assistant system prompt.',
       promptSelectionSaved: 'Preset prompt selection saved.',
       noPresetPrompts: 'No preset prompts are available.',
+      addPrompt: 'Add prompt',
+      addPromptDescription:
+        'Create a custom prompt and add it to the prompt type list.',
+      promptTypeName: 'Prompt type name',
+      promptTypeNamePlaceholder: 'Enter a prompt type name',
+      promptContentPlaceholder: 'Enter the prompt content',
+      promptRequiredFields: 'Prompt type name and content are required.',
+      promptTypeAlreadyExists: 'This prompt type name already exists.',
+      promptCreated: 'Prompt added.',
+      targetChatAssistant: 'Target chat assistant',
+      selectChatAssistant: 'Select a chat assistant',
+      selectChatAssistantRequired:
+        'Select the chat assistant that should use this prompt.',
+      applyToChatAssistant: 'Apply to chat assistant',
+      applyPromptTip:
+        'Applying replaces the target chat assistant system prompt and takes effect from the next message.',
+      applyPromptDescription:
+        'Applying replaces the current system prompt for “{{name}}” and takes effect from the next message.',
+      savePromptChanges: 'Save changes',
+      promptContentRequired: 'Prompt content cannot be empty.',
+      promptUpdated: 'Prompt changes saved.',
       ruleManagement: 'Rule management',
       ruleManagementDescription:
         'Apply deterministic rules to user questions and completed model responses.',
